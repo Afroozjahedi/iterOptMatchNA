@@ -1,6 +1,6 @@
 library(partykit)
 setwd(
-  "C:/Users/Afrooz/Google Drive/education/Computational Science/matching/GmatchRepo"
+  "C:/Users/Afrooz/Google Drive/education/Computational Science/matching/iterOptMatchNA/iterOptMatchNA"
 )
 source("growNA.R")
 source("growtreeNA.R")
@@ -11,23 +11,26 @@ source("rfConstNA.R")
 source("smdNA.R")
 source("x2DistNA.R")
 source("x2DistanceNA.R")
-#source("0-1Distance.R")
-#source("Gmatch.R")
 source("optMatchNA.R")
 source("summaryGmatchNA.R")
-#source("reduceVar.R")
 source("iterOptNA.R")
 
 #### Data ####
-#BRIEF = read.csv("BRIEF.csv", header = T)
-nonOutlierLowADOS = read.csv("lowADOSNonOutlierBefore.csv", header = T)
-nonOutlierLowADOSNAVar= as.data.frame(lapply(nonOutlierLowADOS[c(-2,-1)],function(x) x[sample(c(TRUE,NA),prob=c(0.85,0.10), size=length(x), replace=TRUE)]))  
-nonOutlierLowADOS=data.frame(nonOutlierLowADOS[,c(1,2)],nonOutlierLowADOSNAVar)
-#data = read.csv("data4Algorith.csv",header = T)
-#nonOutlierLowADOSAftMat = read.csv("After Matching.csv", header = T)
-#nonOutlierLowADOS = read.csv("MMC.csv", header = T)
-#nonOutlierLowADOS = read.csv("AGE.csv", header = T)
-#data = read.csv("exclude low ADOS.csv", header = T)
+# #BRIEF = read.csv("BRIEF.csv", header = T)
+# nonOutlierLowADOS = read.csv("lowADOSNonOutlierBefore.csv", header = T)
+# nonOutlierLowADOSNAVar= as.data.frame(lapply(nonOutlierLowADOS[c(-2,-1)],function(x) x[sample(c(TRUE,NA),prob=c(0.85,0.10), size=length(x), replace=TRUE)]))  
+# nonOutlierLowADOS=data.frame(nonOutlierLowADOS[,c(1,2)],nonOutlierLowADOSNAVar)
+# #data = read.csv("data4Algorith.csv",header = T)
+# #nonOutlierLowADOSAftMat = read.csv("After Matching.csv", header = T)
+# #nonOutlierLowADOS = read.csv("MMC.csv", header = T)
+# #nonOutlierLowADOS = read.csv("AGE.csv", header = T)
+# #data = read.csv("exclude low ADOS.csv", header = T)
+data = read.csv("Abide_Combined_Full_Demographics.csv", na.strings = c("","NA"))
+selecteddata = data[,c("DX_GROUP", "RMSD", "AGE_AT_SCAN", "SITE_ID", "FIQ", "SEX", "HANDEDNESS_CATEGORY", "PERCENT_GOODTP","EYE_STATUS_AT_SCAN")]
+selecteddata = subset(selecteddata, AGE_AT_SCAN <= 18 & AGE_AT_SCAN >= 7 & PERCENT_GOODTP >=.80 & EYE_STATUS_AT_SCAN==1) 
+#which(data$RMSD<=.16&data$AGE_AT_SCAN<=18&data$AGE_AT_SCAN>=7&data$PERCENT_GOODTP>=.80)#shows me which participant was dropped because of RMSD values
+#selecteddata$HANDEDNESS_CATEGORY = ifelse (selecteddata$HANDEDNESS_CATEGORY == "R",1,2)#
+
 
 ### Formula ####
 form <-group ~ RMSD.PRE.censoring + Age + WASI.NVIQ +Gender + Handedness 
