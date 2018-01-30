@@ -1,0 +1,613 @@
+library(optmatch)
+#==============================================================================
+# Copyright statement comment
+# Author: Afrooz Jahedi
+# Goal: Create groupwise (1-1) matching.
+# Inputs: data, variables to match on, number of trees, method of matching
+# Outputs:pvalues and standardized mean difference for each variable.number
+#  of subjects in each group
+# Description: build a distance matrix based on random forest with 0-1 defnition or 
+# chi-square defnition.
+#==============================================================================
+ptm <- proc.time()
+#sink("sink-examp.txt")
+
+Gmatch <- function (data, formula, nTree, method, distance) {
+        #==== setting parameters ====
+        response <- all.vars(formula)[1]
+        # response <- deparse(substitute(response))
+        data[[response]]
+        #==== Cleaning data ====
+        # It is important to have ASD first and then TD for distance matrix
+        #?????????????????????????? how to not hard code variables.
+#sink()        
+        
+        data[[response]] <- as.factor (data[[response]])
+        
+        # Number of subjects in each response for original data
+        table(data[[response]])
+        
+        # screening for outlier in motion variable
+        # outlierVal <-
+        #         mean(data$RMSD.PRE.censoring,na.rm = T) + 3 * sd(data$RMSD.PRE.censoring,na.rm = T)
+        
+        # Create the dataframe for matching without outlier and label rows
+        selData <-data[, all.vars(formula)]
+        selVars<-selData[,!names(selData) %in% response,drop=F]  
+       
+      rownames(selData) <- data[, "subj"]
+    
+        # Number of subjects in each group for filtered data
+        table (selData[[response]])
+        
+        # Outlier Subjects
+        # outliers <-
+        #         as.character(data[which(data$RMSD.PRE.censoring >= outlierVal), ]$subj)
+        # cat("subjects with extreme motion are", outliers, "\n")
+        
+        
+        #==== Tree building ====
+        # Building the tree using covariates using greedy search for binary response
+        #  which uses gini index for split. stop criteria for splitting is thirthy
+        # subjects. At each split we use randomly three variables.
+        #????????????????Hard coding variables
+        # form <-
+        #   group ~ Gender + Handedness + RMSD.PRE.censoring + Age + WASI.NVIQ
+        mydata <- grow(
+                formula,
+                data = selData ,
+                search = "greedy" ,
+                method = "class" ,
+                split = "gini" ,
+                minsplit = 20,
+                mtry = 3,
+                nsplit = NULL
+        )
+        # Plot the tree
+        plot(mydata)
+        
+        #==== variable pvalue before matching ====
+        summaryGmatch(selData)
+        
+        # #==== Random Forest growing ====
+        # set.seed(184684)
+         ntrees <- nTree
+        
+        # Create random forest using the same matching covariates using all data
+        rfRF100 <-
+                rfConst(
+                        ntrees = ntrees,
+                        formula = form,
+                        training =  selData,
+                        search = "greedy",
+                        method = "class",
+                        split = "gini",
+                        mtry = 3,
+                        nsplit = NULL,
+                        minsplit = 20,
+                        maxdepth = 10,
+                        minbucket = 5,
+                        bootstrap = FALSE
+                )
+        
+        #==== Reference group for matching to start====
+        
+        # Which group has less subject. That group will be our reference for matching.
+        ASD <- selData$group == 1
+        if (NROW (selData[ASD,]) < NROW (selData[!ASD, ])) {
+                (nMin = NROW (selData[ASD, ]))
+        } else {
+                nMin <- NROW (selData[!ASD, ])
+        }
+        #==== distance matrix =====
+        if (distance=="chi"){
+                # Extracting terminal node for subjects across all trees.
+                nodeResponse <- sapply(rfRF100, function(x) {
+                predict(x$tree, newdata = selData , type = "node")
+        })
+        # Preparing distance matrix
+        sumXDistMat = matrix(0,
+                             nrow = NROW(nodeResponse),
+                             ncol = NROW(nodeResponse))
+        colnames(sumXDistMat) <- rownames(nodeResponse)
+        rownames(sumXDistMat) <- rownames(nodeResponse)
+        
+        ntrees <- nTree
+        
+        # Define a function x2Dist
+        #x2Dist(rfRF100[[treeNum]]$tree,nodeResponse,treeNum)
+        
+        # Add up tree p-values
+        for (treeNum in 1:ntrees) {
+                sumXDistMat <-
+                        sumXDistMat + x2Dist(rfRF100[[treeNum]]$tree, nodeResponse, treeNum)
+        }
+        
+        #average the distance matrix and label rows and columns.
+        xDistFor <- sumXDistMat / ntrees
+        rownames(xDistFor) <- rownames(selData)
+        colnames(xDistFor) <- rownames(selData)
+   
+        # ASD and TD distance only and label them.
+        x2distForSel <- xDistFor[1:nMin, (nMin + 1):ncol(xDistFor)]
+        rownames(x2distForSel) <- rownames(selData[1:nMin, ])
+        colnames(x2distForSel) <-
+                rownames(selData[(nMin + 1):ncol(xDistFor), ])
+        # #replace 0 with 0.1 and 1 with 0.9.
+        # x2distForSel <- ifelse(x2distForSel[,]>=0.85 ,0.9,x2distForSel)
+        # x2distForSel <- ifelse(x2distForSel[,]<=0.5545276 ,0.1,x2distForSel)
+        
+        DM <- x2distForSel
+        
+        }else if(distance=="0-1"){
+                # predict function can provide node info for each obs. Using sapply use all
+                # info from all trees.Node response contains a mtrix of number subjectsx #trees
+                # it shows each subject ended up in which terminal node. #we get thiese terminal
+                # node information for all trees.
+                nodeResponse <-
+                        sapply(rfRF100, function(x) {
+                                predict(x$tree, newdata = selData , type = "node")
+                        })
+                
+                # For creating distance matrix we should set a default matrix first
+                distMat <-
+                        matrix(ntrees,
+                               nrow = NROW(nodeResponse),
+                               ncol = NROW(nodeResponse))
+                # Distance defines as 1 if subjects are in same terminal node,0 otherwise.
+                for (tree in 1:ntrees) {
+                        for (row in 1:NROW(nodeResponse)) {
+                                distMat[, row] <-
+                                        distMat[, row] - (nodeResponse[row, tree] == nodeResponse[, tree])
+                        }
+                }
+                
+                # Average of distance across all trees.
+                distForest <- distMat / ntrees
+                # average distance in the forest
+                
+                rownames(distForest) <- rownames(selData)
+                colnames(distForest) <- rownames(selData)
+                distForSel <- distForest[1:nMin, (nMin + 1):ncol(distForest)]
+                rownames(distForSel) <- rownames(selData[1:nMin, ])
+                colnames(distForSel) <-
+                        rownames(selData[(nMin + 1):ncol(distForest), ])
+                DM <- distForSel
+        }
+        ### propensity score ###
+        pro <-
+                rowMeans (sapply(rfRF100, function(x) {
+                        predict(x$tree, newdata = selData , type = "prob")[, 2]
+                }))
+       
+          logitPro <- log(pro / (1 - pro))
+        
+          # Histogram of logit propensity for all subjects before matching
+          selData["logitPropensity"]<- NA
+          selData$logitPropensity <-logitPro
+          library(ggplot2)
+          p1 = ggplot(data=selData, aes(logitPropensity, color= group, fill=group)) + 
+                  geom_histogram(aes(y=..density..),fill="white", alpha = 1, position = "identity")+
+                  labs(title="Logit Propensity of all Subjects") +
+                  geom_density(alpha=0.9)+ 
+                  theme(plot.title = element_text(hjust = 0.5))+
+                  xlab("Logit propensity") +
+                  ylab("Density") +
+                  scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+                  scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+                  scale_x_continuous(limits = c(-3, 3))
+                  
+                 
+        ggplot(data=selData, aes(pro, color=group,fill=group)) + 
+                  geom_histogram(aes(y=..density..),fill="white", alpha = 1, position = "identity")+
+                  labs(title="Histogram for Propensity of all subjects")+
+                  geom_density(alpha=0.9)+scale_color_brewer(palette="Dark2")+
+                           theme(plot.title = element_text(hjust = 0.5))+
+                           xlab("Propensity") +
+                           ylab("Density") +
+                           scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+                           scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+                           scale_x_continuous(limits = c(-0.1 ,1))
+          
+    
+     
+        #==== Methods ====
+        if (method == "opt-coars-exact") {
+                #=== Distance prepration ====
+                # ASD and TD distance only and label them.
+                x2distForSel <-
+                        xDistFor[1:nMin, (nMin + 1):ncol(xDistFor)]
+                rownames(x2distForSel) <- rownames(selData[1:nMin, ])
+                colnames(x2distForSel) <-
+                        rownames(selData[(nMin + 1):ncol(xDistFor),])
+                
+                # All continious variables of data,dimension and name
+                # numData <-
+                #         selData[, split(names(selData), sapply(selData, function(x)
+                #                 paste(class(x), collapse = " ")))$numeric]
+                # nv <- dim(numData)[2]
+                # vnames <- colnames(numData)
+                # 
+                # #=== Discritize the continious var ===
+                # for (i in (1:nv)) {
+                #         tmp <- reduceVar(numData[[i]], "quantile")
+                #         numData[[i]] <- tmp$x
+                #         numData[[i]] <- as.factor(numData[[i]])
+                # }
+                #=== Exact matching ====
+                library(foreach)
+                # Exact matching of ASD subjects based on categorical variables. If exact match, it's distance, otherwise 1.
+                filtDataCat <- foreach (i = 1:nMin) %do%
+                        ifelse(selData[rownames(x2distForSel)[i], "Gender"]
+                               == selData[colnames(x2distForSel), "Gender"] &
+                                       selData[rownames(x2distForSel)[i], "Handedness"]
+                               == selData[colnames(x2distForSel), "Handedness"]  , x2distForSel, 10)
+                
+                filtDataCat <-
+                        matrix(unlist(filtDataCat),
+                               ncol = ncol(x2distForSel),
+                               byrow = T)
+                colnames(filtDataCat) <-
+                        rownames(selData[(nMin + 1):ncol(xDistFor),])
+                rownames(filtDataCat) <- rownames(selData[1:nMin,])
+                
+                # Exact matching of ASD subjects based on continious variables. If exact match, it's distance,otherwise 1.
+                 thr <- 10
+                 filtDataCont <- foreach (i = 1:nMin) %do%
+                        ifelse(
+                                numData[rownames(x2distForSel)[i], "RMSD.PRE.censoring"]
+                                == numData[colnames(x2distForSel), "RMSD.PRE.censoring"] &
+                                        numData[rownames(x2distForSel)[i], "Age"]
+                                == numData[colnames(x2distForSel), "Age"] &
+                                        numData[rownames(x2distForSel)[i], "WASI.NVIQ"]
+                                == numData[colnames(x2distForSel), "WASI.NVIQ"],
+                                x2distForSel,
+                                thr
+                        )
+                
+                # Build a distance matrix based on exact matched.label cols and rows.
+                filtDataCont <- matrix(unlist(filtDataCont),
+                                       ncol = ncol(x2distForSel),
+                                       byrow = T)
+                colnames(filtDataCont) <-
+                        rownames(selData[(nMin + 1):ncol(xDistFor), ])
+                rownames(filtDataCont) <- rownames(selData[1:nMin, ])
+                write.csv(filtDataCont,file = "filtDataCont.csv")
+                #=== one-to-one optimal matching ====
+                library("optmatch")
+                DM <- filtDataCont
+                optMatch <-
+                        fullmatch(
+                                DM,
+                                min.controls = 1,
+                                max.controls = 1,
+                                omit.fraction = NULL,
+                                tol = 0.001,
+                                subclass.indices = NULL
+                        )
+                matchSubj <- print(optMatch, grouped = T)
+                #print(optMatch)
+                print(summary(optMatch))
+                
+                #=== write output into a object and read it from a file ====
+                capture.output(print(optMatch, grouped = T), file = "subjMatch.txt")
+                subjMatch <- read.table("subjMatch.txt")
+                splitSubj <-
+                        do.call("rbind", strsplit(c(
+                                as.character(subjMatch$Group),
+                                as.character(subjMatch$Members)
+                        ), ","))
+                optData <-
+                        selData[c(as.character(gsub(',', '', (subjMatch[[1]]))),
+                                as.character(subjMatch[[2]])), ]
+                # Set the matched data
+                matchedData <- optData
+                
+                #=== Tabling pvalues and SMD after matching ====
+                
+                pvalMotion <-
+                        (t.test(RMSD.PRE.censoring ~ group, data = matchedData))$p.value
+                pvalAge <-
+                        (t.test(Age ~ group, data = matchedData))$p.value
+                pvalNVIQ <-
+                        (t.test(WASI.NVIQ ~ group, data = matchedData))$p.value
+                pvalGender <-
+                        chisq.test(matchedData$group, matchedData$Gender)$p.value
+                pvalHandedness <-
+                        chisq.test(matchedData$group, matchedData$Handedness)$p.value
+                pvalsOpt <-
+                        matrix(c(
+                                pvalMotion,
+                                pvalAge,
+                                pvalNVIQ,
+                                pvalGender,
+                                pvalHandedness
+                        ),
+                        ncol = 5)
+                colnames(pvalsOpt) <-
+                        c("RMSD.PRE.censoring",
+                          "Age",
+                          "WASI.NVIQ",
+                          "Gender",
+                          "Handedness")
+                rownames(pvalsOpt) <- "Pvals"
+                pvalsOpt <- as.table(pvalsOpt)
+                print(pvalsOpt)
+                
+                # Calculate standardized mean difference
+                smdMotion <- smd(matchedData, RMSD.PRE.censoring)
+                smdAge <- smd(matchedData, "Age")
+                smdNVIQ <- smd(matchedData, "WASI.NVIQ")
+                smdGender <- smd(matchedData, "Gender")
+                smdHandedness <- smd(matchedData, "Handedness")
+                
+                # Tabling smd for output
+                smdOpt <-
+                        matrix(c(smdMotion, smdAge, smdNVIQ, smdGender, smdHandedness),
+                               ncol = 5)
+                colnames(smdOpt) <-
+                        c("RMSD.PRE.censoring",
+                          "Age",
+                          "WASI.NVIQ",
+                          "Gender",
+                          "Handedness")
+                rownames(smdOpt) <- "SMD"
+                smdOpt <- as.table(smdOpt)
+                print(smdOpt)
+                print(table(matchedData$group))
+                print(rownames(matchedData))
+        
+                #=== itteretive optimal matching ====
+                # Check SMD for all variables. if it is not below 10% keep improving 
+                while (abs(smdMotion) > 0.1 |
+                       abs(smdAge) > 0.1 |
+                       abs(smdNVIQ) > 0.1 |
+                       abs(smdGender) > 0.1  |
+                       abs(smdHandedness) > 0.1)
+                {
+                        #=== Obtain matched ASD subject distance ====
+                        distance <- NULL
+                        for (i in 1:(table(optData$group)[2])){
+                                distance <- c(distance,(DM[splitSubj[i,1],splitSubj[(i+(table(optData$group)[2])),1]]) )    
+                        }
+                        splitSubj <- data.frame(splitSubj,distance)
+                        
+                        # Find the name of ASD subject has the largest distance
+                        # subset(splitSubj,distance!=100,select = which.max(distance))
+                        # (subset(splitSubj,distance!=100,select =(distance)))
+                        maxSubjs <- (splitSubj[ splitSubj[,"distance"]!=100 ,]) 
+                        excSubj <- maxSubjs[which.max(maxSubjs[,2]),1]
+                        print(excSubj)
+                        #Get the list of ASD subject that partcipate in the matching
+                        allMatchSubj =splitSubj[1:(table(optData$group)[2]),1]
+                        # 
+                        # for (i in 1:(table(matchedData$group)[2])) {
+                        #         ASDdistance <-
+                        #                 c(ASDdistance, (DM[rownames((matchedData)[i,]),rownames(matchedData[(i +table(matchedData$group)[2]), ])]))
+                        # }
+                        # 
+                        # # Distance of matched ASD subjects
+                        # ASDdistance <- data.frame(subjId=(rownames(matchedData))[1:(table(matchedData$group))[2]], dist=ASDdistance)
+                        # 
+                        # #=== Find the largest distance ASD name that is not exclude due to exact matching.====
+                        # excSubj <- (ASDdistance[which.max(ASDdistance$dist!=thr),])$subjId
+                        # print(excSubj)
+                        # print(ASDdistance[excSubj,])
+                        # #Get the list of ASD subject that partcipate in the matching
+                        # allMatchSubj = rownames(matchedData[1:(table(matchedData$group)[2]), ])
+                        # 
+                        #remaining ASD subjects
+                        remainedASD <- as.character(allMatchSubj[allMatchSubj!= excSubj])
+                        print(remainedASD)
+                        
+                        #trimed distance matrix
+                        trimedDM <- DM[remainedASD,]
+                        
+
+                        #====Redo the optimal matching ======
+                        #Redo the optimal matching
+
+                        optMatch <-
+                                fullmatch(
+                                        trimedDM,
+                                        min.controls = 1,
+                                        max.controls = 1,
+                                        omit.fraction = NULL,
+                                        tol = 0.001,
+                                        subclass.indices = NULL
+                                )
+                        summary(optMatch)
+                        #print(optMatch, responseed = T)
+                        
+                        # #==== write the itteretive matched output to a text file ====
+                        capture.output(print(optMatch, grouped = T), file = "iterSubjMatch.txt")
+                        
+                        subjMatch <- read.table("iterSubjMatch.txt",header = T)
+                        splitSubj <- do.call("rbind",strsplit(c(as.character(subjMatch$Group),as.character(subjMatch$Members)), ","))
+                        optData <- selData[splitSubj, ]
+                        # capture.output(print(optMatch, grouped = T), file = "iterSubjMatch.txt")
+                        # subjMatch <- read.table("iterSubjMatch.txt")
+                        # optData <-
+                        #         selData[c(as.character(gsub(',', '', (subjMatch[[1]]))),
+                        #                 as.character(subjMatch[[2]])), ]
+                         matchedData <- optData
+                        #====  # Tabling pvalues and SMD after matching ====
+                        summaryGmatch(optData)
+                        
+                                      }
+
+        }else if (method == "opt-coars-exact-rev"){
+                #==== exact revised matching ====
+                motionThresh <-0.05
+                ageThresh <- 4
+                NVIQThresh <- 15
+                                
+                library(fields)
+                # euludien distance for motion
+                motionDist <- rdist(selData$RMSD.PRE.censoring)
+                motionDist[lower.tri(motionDist)] <- NA
+                diag(motionDist) <- NA
+                colnames(motionDist) <- rownames(selData)
+                rownames(motionDist) <- rownames(selData)
+                motionDist <- motionDist[1:nMin,(nMin+1):nrow(selData)]
+                
+                # Filter motion
+                filtMotionDist <- motionDist[,]<motionThresh
+                
+                # distance matrix for age
+                ageDist <- rdist(selData$Age)
+                ageDist[lower.tri(ageDist)] <- NA
+                diag(ageDist) <- NA
+                colnames(ageDist) <- rownames(selData)
+                rownames(ageDist) <- rownames(selData)
+                ageDist <- ageDist[1:nMin,(nMin+1):nrow(selData)]
+                # fliter age 
+                filtAgeDist <- ageDist[,]<ageThresh
+                
+                # distance matrix for NVIQ
+                NVIQDist <- rdist(selData$WASI.NVIQ)
+                NVIQDist[lower.tri(NVIQDist)] <- NA
+                diag(NVIQDist) <- NA
+                colnames(NVIQDist) <- rownames(selData)
+                rownames(NVIQDist) <- rownames(selData)
+                NVIQDist <- NVIQDist[1:nMin,(nMin+1):nrow(selData)]
+                # fliter NVIQ
+                filtNVIQDist <- NVIQDist[,]<NVIQThresh
+                 
+                m= NULL
+               for (i in  1:nMin) {
+                               m=c(m, selData[rownames(x2distForSel)[i], "Gender"] == selData[colnames(x2distForSel), "Gender"] &
+                                       selData[rownames(x2distForSel)[i], "Handedness"]== selData[colnames(x2distForSel), "Handedness"])
+               }
+                filtDataCat <-
+                        matrix((m),
+                               ncol = ncol(x2distForSel),
+                               byrow = T)
+                colnames(filtDataCat) <-
+                        rownames(selData[(nMin + 1):ncol(xDistFor),])
+                rownames(filtDataCat) <- rownames(selData[1:nMin,])
+                
+                #combine exact matching
+                combineExactDist <- filtAgeDist&filtMotionDist&filtNVIQDist&filtDataCat
+                combineExactDist <- ifelse(combineExactDist,DM, 10) 
+                a <- iterOpt(combineExactDist,selData) 
+                optimData <- selData[a,]
+                 ggplot(data= optimData, aes(x=logitPropensity, color=group,fill=group)) + 
+                        geom_histogram(aes(y=..density..),fill="white", alpha = 0.6, position = "identity")+
+                        scale_colour_manual(name = 'Density')+
+                        labs(title="Logit Propensity after Iterative Coarsened Exact Matching")+
+                        geom_density(alpha=0.9)+
+                        theme(plot.title = element_text(hjust = 0.5))+
+                        xlab("Logit propensity") +
+                        ylab("Density") +
+                        scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+                        scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+                        scale_x_continuous(limits = c(-3, 3))
+                
+               
+             
+        } else if (method == "opt-one-to-one"){
+
+                #=== Optimal one-to-one matching ====
+                library("optmatch")
+                optMatch <-
+                        fullmatch(
+                                DM,
+                                min.controls = 1,
+                                max.controls = 1,
+                                omit.fraction = NULL,
+                                tol = 0.001,
+                                subclass.indices = NULL
+                        )
+                summary(optMatch)
+                #print(optMatch, responseed = T)
+                
+                #=== write output to a file to be used again as an obj in R ====
+                capture.output(print(optMatch, grouped = T), file = "subjMatch.txt")
+                subjMatch <- read.table("subjMatch.txt", header = T)
+                splitSubj <-
+                        do.call("rbind", strsplit(c(
+                                as.character(subjMatch$Group),
+                                as.character(subjMatch$Members)
+                        ), ","))
+                optData <- selData[splitSubj, ]
+               
+                #=== Tabling pvalues and SMD for output ====
+                S <- summaryGmatch(optData)
+                
+                #=== itteration ===== 
+                # Check SMD for all variables. if it is not below 10% keep improving
+                while (abs(S$smdMotion) > 0.1 | abs(S$smdAge) > 0.1| abs(S$smdNVIQ) > 0.1 | abs(S$smdGender) > 0.1  |abs(S$smdHandedness) > 0.1 )
+                        {
+                        #= Can we improve SMD? First =
+                        # who has the largest distance? 
+                        distance <- NULL
+                        for (i in 1:(table(optData$group)[2])){
+                                distance <- c(distance,(DM[as.character(splitSubj[i,1]),as.character(splitSubj[(i+(table(optData$group)[2])),1])]) )    
+                        }
+                        splitSubj <- data.frame(splitSubj,distance)
+                        # Find the name of ASD subject has the largest distance
+                        #excSubj <- (splitSubj[apply(splitSubj,2,which.max)$distance, ])[1]
+                        
+                        maxSubjs <- (splitSubj[ splitSubj[,"distance"]!=100 ,]) 
+                        excSubj <- maxSubjs[which.max(maxSubjs[,2]),1]
+                        print(excSubj)
+                        #Get the list of ASD subject that partcipate in the matching
+                        #allMatchSubj =rownames(DM[splitSubj[1:(nrow(splitSubj)), 1], ])
+                        allMatchSubj =splitSubj[1:(table(optData$group)[2]),1]
+                        
+                        
+                        #remaining ASD subjects
+                        remainedASD <- as.character(allMatchSubj[allMatchSubj!= excSubj])
+                        print(remainedASD)
+                        
+                        #trimed distance matrix
+                        trimedDM <- DM[remainedASD,]
+                        
+                        #Redo the optimal matching
+                        optMatch <-
+                                fullmatch(
+                                        trimedDM,
+                                        min.controls = 1,
+                                        max.controls = 1,
+                                        omit.fraction = NULL,
+                                        tol = 0.001,
+                                        subclass.indices = NULL
+                                )
+                        summary(optMatch)
+                        print(optMatch, responseed = T)
+                        
+                        #==== write the itterated matched output to a text file ====
+                        capture.output(print(optMatch, grouped = T), file = "subjMatch.txt")
+                        
+                        subjMatch <- read.table("subjMatch.txt",header = T)
+                        splitSubj <- do.call("rbind",strsplit(c(as.character(subjMatch$Group),as.character(subjMatch$Members)), ","))
+                        optData <- selData[splitSubj, ]
+                        a <- rownames(optData)
+                        optimData <- selData[a,]
+                        
+                        #==== Tabling pvalues and SMD after matching ====
+                        S <- summaryGmatch(optData)
+                        
+                }
+               p3 = ggplot(data=optimData, aes(logitPropensity, color=group,fill=group)) + 
+                        geom_histogram(aes(y= ..density..),fill="white", alpha = 1, position = "identity")+
+                        labs(title="Logit Propensity of Subjects after Iterative Optimal Matching") +
+                        geom_density(alpha=0.9)+
+                        theme(plot.title = element_text(hjust = 0.5))+
+                        xlab("Logit propensity") +
+                        ylab("Density") +
+                        scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+                        scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+                        scale_x_continuous(limits = c(-3, 3))
+                        
+                       return(list(p1,p2,p3))
+                        
+                        
+                        
+        }                    
+ 
+          
+        proc.time() - ptm
+        
+          }
