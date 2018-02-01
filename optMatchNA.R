@@ -16,16 +16,13 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         #==== setting parameters ====
         response <- all.vars(formula)[1]
         # response <- deparse(substitute(response))
-        data[[response]]
+        #data[[response]]
         #==== Cleaning data ====
         # It is important to have ASD first and then TD for distance matrix
-        #?????????????????????????? how to not hard code variables.
-#sink()        
-        
-        data[[response]] <- as.factor (data[[response]])
-        
+        #sink()        
+        #data[[response]] <- as.factor (data[[response]])
         # Number of subjects in each response for original data
-        table(data[[response]])
+        print(table(data[[response]]))
         
         # screening for outlier in motion variable
         # outlierVal <-
@@ -34,8 +31,9 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         # Create the dataframe for matching without outlier and label rows
         selData <-data[, all.vars(formula)]
         selVars<-selData[,!names(selData) %in% response,drop=F]  
+        
        
-      rownames(selData) <- data[, "subj"]
+      #rownames(selData) <- data[, "subj"]
     
         # Number of subjects in each group for filtered data
         table (selData[[response]])
@@ -44,15 +42,17 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         # outliers <-
         #         as.character(data[which(data$RMSD.PRE.censoring >= outlierVal), ]$subj)
         # cat("subjects with extreme motion are", outliers, "\n")
-        
+        for(i in 1:length(selVars)){
+            summaryGmatch(selData, response, names(selVars)[i])
+        }
         
         #==== Tree building ====
         # Building the tree using covariates using greedy search for binary response
         #  which uses gini index for split. stop criteria for splitting is thirthy
         # subjects. At each split we use randomly three variables.
-        #????????????????Hard coding variables
-        # form <-
-        #   group ~ Gender + Handedness + RMSD.PRE.censoring + Age + WASI.NVIQ
+        
+   
+       
         mydata <- grow(
                 formula,
                 data = selData ,
@@ -67,8 +67,8 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         plot(mydata)
         
         #==== variable pvalue before matching ====
-        summaryGmatch(selData)
         
+       
         # #==== Random Forest growing ====
         # set.seed(184684)
          ntrees <- nTree

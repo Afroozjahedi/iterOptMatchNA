@@ -1,4 +1,7 @@
 library(partykit)
+# setwd(
+#     "C:/Users/Afrooz/Google Drive/education/Computational Science/matching/GmatchRepo"
+# )
 setwd(
   "C:/Users/Afrooz/Google Drive/education/Computational Science/matching/iterOptMatchNA/iterOptMatchNA"
 )
@@ -16,44 +19,54 @@ source("summaryGmatchNA.R")
 source("iterOptNA.R")
 
 #### Data ####
-# #BRIEF = read.csv("BRIEF.csv", header = T)
+
 # nonOutlierLowADOS = read.csv("lowADOSNonOutlierBefore.csv", header = T)
 # nonOutlierLowADOSNAVar= as.data.frame(lapply(nonOutlierLowADOS[c(-2,-1)],function(x) x[sample(c(TRUE,NA),prob=c(0.85,0.10), size=length(x), replace=TRUE)]))  
 # nonOutlierLowADOS=data.frame(nonOutlierLowADOS[,c(1,2)],nonOutlierLowADOSNAVar)
-# #data = read.csv("data4Algorith.csv",header = T)
-# #nonOutlierLowADOSAftMat = read.csv("After Matching.csv", header = T)
-# #nonOutlierLowADOS = read.csv("MMC.csv", header = T)
-# #nonOutlierLowADOS = read.csv("AGE.csv", header = T)
-# #data = read.csv("exclude low ADOS.csv", header = T)
-data = read.csv("Abide_Combined_Full_Demographics.csv", na.strings = c("","NA"))
-selecteddata = data[,c("DX_GROUP", "RMSD", "AGE_AT_SCAN", "SITE_ID", "FIQ", "SEX", "HANDEDNESS_CATEGORY", "PERCENT_GOODTP","EYE_STATUS_AT_SCAN")]
-selecteddata = subset(selecteddata, AGE_AT_SCAN <= 18 & AGE_AT_SCAN >= 7 & PERCENT_GOODTP >=.80 & EYE_STATUS_AT_SCAN==1) 
-#which(data$RMSD<=.16&data$AGE_AT_SCAN<=18&data$AGE_AT_SCAN>=7&data$PERCENT_GOODTP>=.80)#shows me which participant was dropped because of RMSD values
-#selecteddata$HANDEDNESS_CATEGORY = ifelse (selecteddata$HANDEDNESS_CATEGORY == "R",1,2)#
+data = read.csv("Abide_Combined_Full_Demographics.csv",
+                na.strings = c("", "NA"))
+selecteddata = data[, c(
+    "SUB_ID",
+    "DX_GROUP",
+    "RMSD",
+    "AGE_AT_SCAN",
+    "ï..SITE_ID",
+    "FIQ",
+    "SEX",
+    "HANDEDNESS_CATEGORY",
+    "PERCENT_GOODTP",
+    "EYE_STATUS_AT_SCAN"
+)]
+selecteddata = subset(
+    selecteddata,
+    AGE_AT_SCAN <= 18 & AGE_AT_SCAN >= 7 & PERCENT_GOODTP >= .80 & 
+        EYE_STATUS_AT_SCAN == 1 & HANDEDNESS_CATEGORY<=3 & RMSD <0.16
+) 
 
+print(sapply(selecteddata, is.factor))
+catVars = c("DX_GROUP","SEX", "HANDEDNESS_CATEGORY", "EYE_STATUS_AT_SCAN" )
+selecteddata[,catVars] <- lapply(selecteddata[,catVars] , factor)
 
 ### Formula ####
-form <-group ~ RMSD.PRE.censoring + Age + WASI.NVIQ +Gender + Handedness 
-# varList <- c("Gender",
-#              "Handedness" ,
-#              "RMSD.PRE.censoring" ,
-#              "Age",
-#              "WASI.NVIQ")
-#Gmatch (BRIEF,varList,30)
+#type names correctly#form <-group ~ RMSD.PRE.CENSORING + Age + WASI.NVIQ + Gender + Handedness 
+form <-DX_GROUP ~ RMSD + AGE_AT_SCAN + FIQ +SEX + HANDEDNESS_CATEGORY 
+
 
 ### Debug function ####
 #debug(x2Dist)
 #debug(rfConst)
 debug(Gmatch)
 
+Gmatch (selecteddata, form, 10,"opt-one-to-one","chi")
 #Gmatch (nonOutlierLowADOS, form, 1000,"1To3Dist")#1:3
 #Gmatch (nonOutlierLowADOS, form, 1000,"propensity" )
 #Gmatch (Gmatch (nonOutlierLowADOSNA, form, 1000,"propensity" ), form, 1000,"propensity" )
 #Gmatch (nonOutlierLowADOS, form, 1000, "propensity")#to get propensity score
-Gmatch (nonOutlierLowADOS, form, 10,"opt-one-to-one","chi")
 ##Gmatch (nonOutlierLowADOS, form, 1000,"opt-coars-exact-rev","chi")
 #Gmatch (nonOutlierLowADOS, form, 10,"opt-coars-exact-rev")
 ### Statistics of the dataset ####
+
+
 mean(subset(optData, group==0)$Age)
 sd(subset(optData, group==0)$Age)
 range(subset(optData, group==0)$Age)
