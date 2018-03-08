@@ -1,12 +1,14 @@
-summaryGmatch <- function(DATA,GROUP,Var){
-    if(!is.factor(DATA[,Var])){
-        pvalue <- with(DATA, t.test(DATA[,Var] ~ DATA[,GROUP]))$p.value
-        summary <- aggregate(DATA[,Var]~DATA[,GROUP],DATA,function(x) c(mean = mean(x) ,var = var(x)))
+summaryGmatch <- function(DATA, GROUP, Var) {
+    if (!is.factor(DATA[, Var])) {
+        pvalue <- with(DATA, t.test(DATA[, Var] ~ DATA[, GROUP]))$p.value
+        summary <-
+            aggregate(DATA[, Var] ~ DATA[, GROUP], DATA, function(x)
+                c(mean = mean(x) , var = var(x)))
         #by(DATA[,Var],DATA[,GROUP], function(x) mean(x,na.rm = T))
         smd <- smd(DATA, Var, GROUP)
-    }else{
-        summary <- table(DATA[,GROUP],DATA[,Var])
-        pvalue<- chisq.test(DATA[,GROUP], DATA[,Var])$p.value
+    } else{
+        summary <- table(DATA[, GROUP], DATA[, Var])
+        pvalue <- chisq.test(DATA[, GROUP], DATA[, Var])$p.value
         smd <- smd(DATA, Var, GROUP)
     }
     
@@ -54,6 +56,6 @@ summaryGmatch <- function(DATA,GROUP,Var){
 # rownames(smd) <- "SMD"
 # smd <- as.table(smd)
 # #return(smdMotion )#= smdMotion)#,smdAge = smdAge, smdOpt = smdOpt))
-return(list(smd = print(smd),print(summary),pval=print(pvalue)))
+return(list(varname= paste0(Var),name= cat("========",Var,"========","\n"), print(c(GROUP, table(DATA[,GROUP]))),smd =print(smd), pval=print(pvalue), cat("P-value=",pvalue,"\n"), cat("SMD=",smd,"\n"),cat("----- Mean&Var ----","\n"), print(summary)))
 #cat("pvals", "smdOpt","table(DATA$group)","\n")
 }

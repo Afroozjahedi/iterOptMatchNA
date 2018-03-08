@@ -9,7 +9,7 @@
 #==============================================================================
 
 #x2Dist(rfRF100[[treeNum]]$tree,nodeResponse,treeNum)
-x2Dist <- function(tree, terminalNode, treeNum) {
+x2Dist <- function(tree, terminalNode, treeNum, Group) {
   pars <- as.list(match.call())
   
   # Identify terminal nodes in the tree
@@ -22,7 +22,7 @@ x2Dist <- function(tree, terminalNode, treeNum) {
   
   # Table subjects based on group for each terminal node
   groupObs = t(sapply(terNode, function(n) {
-    table(tree[n]$data$group)
+    table(tree[n]$data[Group])
   }))
   
   #make data frame with terminal node labels, #ASD, #TD in that terminal node

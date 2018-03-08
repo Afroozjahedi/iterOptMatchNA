@@ -23,41 +23,67 @@ source("iterOptNA.R")
 # nonOutlierLowADOS = read.csv("lowADOSNonOutlierBefore.csv", header = T)
 # nonOutlierLowADOSNAVar= as.data.frame(lapply(nonOutlierLowADOS[c(-2,-1)],function(x) x[sample(c(TRUE,NA),prob=c(0.85,0.10), size=length(x), replace=TRUE)]))  
 # nonOutlierLowADOS=data.frame(nonOutlierLowADOS[,c(1,2)],nonOutlierLowADOSNAVar)
-data = read.csv("Abide_Combined_Full_Demographics.csv",
-                na.strings = c("", "NA"))
+#data = read.csv("Abide_Combined_Full_Demographics-handednessScore.csv",
+#                na.strings = c("", "NA"))
+#data[data== -9999] <- NA
+data <- read.csv("Abide_Combined_Full_Demographics_PIQ2.csv", na.strings = c("", "NA"))
+selecteddata = data[,c("DX_GROUP","RMSD","AGE_AT_SCAN","ï..ID","PIQ","SEX","HANDEDNESS_CATEGORY")] #,"SITE_ID","PIQ","SEX","HANDEDNESS_CATEGORY","EYE_STATUS","PERCENT_GOODTP")] #1:20 is detemining rows and the c,"" is picking out coloums
+
+
+library(plyr)
+#data$HANDEDNESS_CATEGORY <-
+#   revalue(data$HANDEDNESS_CATEGORY,c("Ambi"="3", "L"="2", "R"="1","Mixed"="3"))
+
+
 selecteddata = data[, c(
-    "SUB_ID",
+    "ï..ID",
     "DX_GROUP",
     "RMSD",
     "AGE_AT_SCAN",
-    "ï..SITE_ID",
-    "FIQ",
+    "PIQ",
     "SEX",
     "HANDEDNESS_CATEGORY",
     "PERCENT_GOODTP",
     "EYE_STATUS_AT_SCAN"
 )]
+#50772motion check
+
 selecteddata = subset(
     selecteddata,
     AGE_AT_SCAN <= 18 & AGE_AT_SCAN >= 7 & PERCENT_GOODTP >= .80 & 
-        EYE_STATUS_AT_SCAN == 1 & HANDEDNESS_CATEGORY<=3 & RMSD <0.16
+        EYE_STATUS_AT_SCAN == 1 & RMSD <0.16 
+    
 ) 
+#creating dummy variable for handedness_category 
+for(level in unique(selecteddata$HANDEDNESS_CATEGORY)){
+    selecteddata[paste("HANDEDNESS_CATEGORY", level, sep = "_")] <- ifelse(selecteddata$HANDEDNESS_CATEGORY == level, 1, 0)
+}
 
 print(sapply(selecteddata, is.factor))
-catVars = c("DX_GROUP","SEX", "HANDEDNESS_CATEGORY", "EYE_STATUS_AT_SCAN" )
+catVars = c("DX_GROUP","SEX", "EYE_STATUS_AT_SCAN", "HANDEDNESS_CATEGORY_1", "HANDEDNESS_CATEGORY_2")
+#catVars = c("DX_GROUP","SEX", "EYE_STATUS_AT_SCAN" )
+
 selecteddata[,catVars] <- lapply(selecteddata[,catVars] , factor)
+
+# Give label name to the data to be abale to track subjects.
+#rownames(selecteddata) <- paste0(selecteddata$ï..ID,selecteddata$DX_GROUP)
+
+# It is important to sort subjects ASD first and TD latrer.
+selecteddata <- (selecteddata[order(selecteddata$DX_GROUP),])
 
 ### Formula ####
 #type names correctly#form <-group ~ RMSD.PRE.CENSORING + Age + WASI.NVIQ + Gender + Handedness 
-form <-DX_GROUP ~ RMSD + AGE_AT_SCAN + FIQ +SEX + HANDEDNESS_CATEGORY 
+form <-DX_GROUP ~ RMSD + AGE_AT_SCAN + PIQ +SEX + HANDEDNESS_CATEGORY_1 + HANDEDNESS_CATEGORY_2
+#form <-DX_GROUP ~ RMSD + AGE_AT_SCAN + FIQ +SEX + HANDEDNESS_SCORES 
+
+
 
 
 ### Debug function ####
-#debug(x2Dist)
-#debug(rfConst)
+options(error=recover, show.error.locations=TRUE, warn=2)
 debug(Gmatch)
 
-Gmatch (selecteddata, form, 10,"opt-one-to-one","chi")
+Gmatch (selecteddata, form,2,"opt-one-to-one","chi")
 #Gmatch (nonOutlierLowADOS, form, 1000,"1To3Dist")#1:3
 #Gmatch (nonOutlierLowADOS, form, 1000,"propensity" )
 #Gmatch (Gmatch (nonOutlierLowADOSNA, form, 1000,"propensity" ), form, 1000,"propensity" )

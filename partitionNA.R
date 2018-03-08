@@ -33,6 +33,7 @@ partition<-function(vars, y, subset, search, method, split, nsplit,
       if (search=="greedy"){
         #Note: Rpart uses impurity gain
         if(useRpart==FALSE){
+           
           nX<-length(x)
           #Due to ties, it's possible minbucket cannot be satisfied
           if(sort(x)[minbucket]==sort(x,decreasing=TRUE)[minbucket]){cutpts=NULL

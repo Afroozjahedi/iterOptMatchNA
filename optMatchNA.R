@@ -1,26 +1,25 @@
 library(optmatch)
-#==============================================================================
-# Copyright statement comment
-# Author: Afrooz Jahedi
-# Goal: Create groupwise (1-1) matching.
-# Inputs: data, variables to match on, number of trees, method of matching
-# Outputs:pvalues and standardized mean difference for each variable.number
+#'@title
+#'@description Create groupwise (1-1) matching. After building a distance matrix based on random 
+#'forest, using a matching method we select subset of subjects that are matched in control and tretment group 
+#'@pram data: dataframe of subjects and variables
+#'@pram formula: Formula which defines the response and matched variables
+#'@pram nTree: number of tree in the random forest
+#'@pram method: matching method that can be either "opt-coars-exact", "opt-coars-exact-rev", "opt-one-to-one"
+#'@pram distance: "0-1" and "chi" are the two defined distance matrix 
+#'@output pvalues and standardized mean difference for each variable.number
 #  of subjects in each group
-# Description: build a distance matrix based on random forest with 0-1 defnition or 
-# chi-square defnition.
-#==============================================================================
+#'@author Afrooz Jahedi
+
 ptm <- proc.time()
-#sink("sink-examp.txt")
+#sink()
+#sink("iterOptMatchingResult-HANDEDNESSSCORES-0.10-1000.txt")
 
 Gmatch <- function (data, formula, nTree, method, distance) {
         #==== setting parameters ====
         response <- all.vars(formula)[1]
-        # response <- deparse(substitute(response))
-        #data[[response]]
-        #==== Cleaning data ====
-        # It is important to have ASD first and then TD for distance matrix
-        #sink()        
-        #data[[response]] <- as.factor (data[[response]])
+
+        
         # Number of subjects in each response for original data
         print(table(data[[response]]))
         
@@ -32,27 +31,31 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         selData <-data[, all.vars(formula)]
         selVars<-selData[,!names(selData) %in% response,drop=F]  
         
-       
+        # writeWorksheetToFile("model1.xlsx", 
+        #                      data = summary(selData), 
+        #                      sheet = "summary3", 
+        #                      header = TRUE,
+        #                      clearSheets = TRUE)
       #rownames(selData) <- data[, "subj"]
     
         # Number of subjects in each group for filtered data
         table (selData[[response]])
+        print(summary(selData))
         
-        # Outlier Subjects
-        # outliers <-
-        #         as.character(data[which(data$RMSD.PRE.censoring >= outlierVal), ]$subj)
-        # cat("subjects with extreme motion are", outliers, "\n")
-        for(i in 1:length(selVars)){
-            summaryGmatch(selData, response, names(selVars)[i])
+        #==== Variable's pvalue before matching ====
+         S = list()
+         for(i in 1:length(selVars)){
+            S[[i]] = summaryGmatch(selData, response, names(selVars)[i])
         }
-        
+       
         #==== Tree building ====
+        # One single tree is good for detecting where the problem in the tree is hidden.
         # Building the tree using covariates using greedy search for binary response
-        #  which uses gini index for split. stop criteria for splitting is thirthy
+        # which uses gini index for split. stop criteria for splitting is thirthy
         # subjects. At each split we use randomly three variables.
         
    
-       
+        set.seed(1)
         mydata <- grow(
                 formula,
                 data = selData ,
@@ -64,13 +67,13 @@ Gmatch <- function (data, formula, nTree, method, distance) {
                 nsplit = NULL
         )
         # Plot the tree
-        plot(mydata)
-        
-        #==== variable pvalue before matching ====
+        # plot(mydata)
         
        
-        # #==== Random Forest growing ====
-        # set.seed(184684)
+        
+       
+        #==== Random Forest growing ====
+         set.seed(184684)
          ntrees <- nTree
         
         # Create random forest using the same matching covariates using all data
@@ -93,13 +96,13 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         #==== Reference group for matching to start====
         
         # Which group has less subject. That group will be our reference for matching.
-        ASD <- selData$group == 1
+        ASD <- selData[,response] == 1
         if (NROW (selData[ASD,]) < NROW (selData[!ASD, ])) {
                 (nMin = NROW (selData[ASD, ]))
         } else {
                 nMin <- NROW (selData[!ASD, ])
         }
-        #==== distance matrix =====
+        #==== Select distance matrix =====
         if (distance=="chi"){
                 # Extracting terminal node for subjects across all trees.
                 nodeResponse <- sapply(rfRF100, function(x) {
@@ -117,10 +120,10 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         # Define a function x2Dist
         #x2Dist(rfRF100[[treeNum]]$tree,nodeResponse,treeNum)
         
-        # Add up tree p-values
+        # Add up tree's p-values
         for (treeNum in 1:ntrees) {
                 sumXDistMat <-
-                        sumXDistMat + x2Dist(rfRF100[[treeNum]]$tree, nodeResponse, treeNum)
+                        sumXDistMat + x2Dist(rfRF100[[treeNum]]$tree, nodeResponse, treeNum,response)
         }
         
         #average the distance matrix and label rows and columns.
@@ -142,7 +145,7 @@ Gmatch <- function (data, formula, nTree, method, distance) {
         }else if(distance=="0-1"){
                 # predict function can provide node info for each obs. Using sapply use all
                 # info from all trees.Node response contains a mtrix of number subjectsx #trees
-                # it shows each subject ended up in which terminal node. #we get thiese terminal
+                # it shows each subject ended up in which terminal node. #we get these terminal
                 # node information for all trees.
                 nodeResponse <-
                         sapply(rfRF100, function(x) {
@@ -174,46 +177,9 @@ Gmatch <- function (data, formula, nTree, method, distance) {
                         rownames(selData[(nMin + 1):ncol(distForest), ])
                 DM <- distForSel
         }
-        ### propensity score ###
-        pro <-
-                rowMeans (sapply(rfRF100, function(x) {
-                        predict(x$tree, newdata = selData , type = "prob")[, 2]
-                }))
-       
-          logitPro <- log(pro / (1 - pro))
-        
-          # Histogram of logit propensity for all subjects before matching
-          selData["logitPropensity"]<- NA
-          selData$logitPropensity <-logitPro
-          library(ggplot2)
-          p1 = ggplot(data=selData, aes(logitPropensity, color= group, fill=group)) + 
-                  geom_histogram(aes(y=..density..),fill="white", alpha = 1, position = "identity")+
-                  labs(title="Logit Propensity of all Subjects") +
-                  geom_density(alpha=0.9)+ 
-                  theme(plot.title = element_text(hjust = 0.5))+
-                  xlab("Logit propensity") +
-                  ylab("Density") +
-                  scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
-                  scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
-                  scale_x_continuous(limits = c(-3, 3))
-                  
-                 
-        ggplot(data=selData, aes(pro, color=group,fill=group)) + 
-                  geom_histogram(aes(y=..density..),fill="white", alpha = 1, position = "identity")+
-                  labs(title="Histogram for Propensity of all subjects")+
-                  geom_density(alpha=0.9)+scale_color_brewer(palette="Dark2")+
-                           theme(plot.title = element_text(hjust = 0.5))+
-                           xlab("Propensity") +
-                           ylab("Density") +
-                           scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
-                           scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
-                           scale_x_continuous(limits = c(-0.1 ,1))
-          
-    
-     
         #==== Methods ====
         if (method == "opt-coars-exact") {
-                #=== Distance prepration ====
+                #=== Distance prepration ===
                 # ASD and TD distance only and label them.
                 x2distForSel <-
                         xDistFor[1:nMin, (nMin + 1):ncol(xDistFor)]
@@ -519,7 +485,7 @@ Gmatch <- function (data, formula, nTree, method, distance) {
                                 tol = 0.001,
                                 subclass.indices = NULL
                         )
-                summary(optMatch)
+                 summary(optMatch)
                 #print(optMatch, responseed = T)
                 
                 #=== write output to a file to be used again as an obj in R ====
@@ -531,38 +497,52 @@ Gmatch <- function (data, formula, nTree, method, distance) {
                                 as.character(subjMatch$Members)
                         ), ","))
                 optData <- selData[splitSubj, ]
+                print(summary(optData))
                
                 #=== Tabling pvalues and SMD for output ====
-                S <- summaryGmatch(optData)
+                S = list()
+                for(i in 1:length(selVars)){
+                    S[[i]] = summaryGmatch(selData, response, names(selVars)[i])
+                }
+                #S <- summaryGmatch(optData)
                 
                 #=== itteration ===== 
                 # Check SMD for all variables. if it is not below 10% keep improving
-                while (abs(S$smdMotion) > 0.1 | abs(S$smdAge) > 0.1| abs(S$smdNVIQ) > 0.1 | abs(S$smdGender) > 0.1  |abs(S$smdHandedness) > 0.1 )
-                        {
+                while (abs(S[[1]][[5]]) > 0.1 |
+                       abs(S[[2]][[5]]) > 0.1 |
+                       abs(S[[3]][[5]]) > 0.1 |
+                       abs(S[[4]][[5]]) > 0.1 |
+                       abs(S[[5]][[5]]) > 0.1| abs(S[[6]][[5]]) > 0.1)
+                {
                         #= Can we improve SMD? First =
-                        # who has the largest distance? 
+                        # who has the largest distance?
                         distance <- NULL
-                        for (i in 1:(table(optData$group)[2])){
-                                distance <- c(distance,(DM[as.character(splitSubj[i,1]),as.character(splitSubj[(i+(table(optData$group)[2])),1])]) )    
+                        for (i in 1:(table(optData[, response])[1])) {
+                                distance <-
+                                        c(distance, (DM[as.character(splitSubj[i, 1]), as.character(splitSubj[(i +
+                                                                                                                       (table(optData[, response])[1])), 1])]))
                         }
-                        splitSubj <- data.frame(splitSubj,distance)
+                        splitSubj <- data.frame(splitSubj, distance)
                         # Find the name of ASD subject has the largest distance
                         #excSubj <- (splitSubj[apply(splitSubj,2,which.max)$distance, ])[1]
                         
-                        maxSubjs <- (splitSubj[ splitSubj[,"distance"]!=100 ,]) 
-                        excSubj <- maxSubjs[which.max(maxSubjs[,2]),1]
+                        maxSubjs <-
+                                (splitSubj[splitSubj[, "distance"] != 100 , ])
+                        excSubj <-
+                                maxSubjs[which.max(maxSubjs[, 2]), 1]
                         print(excSubj)
                         #Get the list of ASD subject that partcipate in the matching
                         #allMatchSubj =rownames(DM[splitSubj[1:(nrow(splitSubj)), 1], ])
-                        allMatchSubj =splitSubj[1:(table(optData$group)[2]),1]
+                        allMatchSubj = splitSubj[1:(table(optData[, response])[2]), 1]
                         
                         
                         #remaining ASD subjects
-                        remainedASD <- as.character(allMatchSubj[allMatchSubj!= excSubj])
-                        print(remainedASD)
+                        remainedASD <-
+                                as.character(allMatchSubj[allMatchSubj != excSubj])
+                        #print(remainedASD)
                         
                         #trimed distance matrix
-                        trimedDM <- DM[remainedASD,]
+                        trimedDM <- DM[remainedASD, ]
                         
                         #Redo the optimal matching
                         optMatch <-
@@ -580,34 +560,77 @@ Gmatch <- function (data, formula, nTree, method, distance) {
                         #==== write the itterated matched output to a text file ====
                         capture.output(print(optMatch, grouped = T), file = "subjMatch.txt")
                         
-                        subjMatch <- read.table("subjMatch.txt",header = T)
-                        splitSubj <- do.call("rbind",strsplit(c(as.character(subjMatch$Group),as.character(subjMatch$Members)), ","))
-                        optData <- selData[splitSubj, ]
+                        subjMatch <-
+                                read.table("subjMatch.txt", header = T)
+                        splitSubj <-
+                                do.call("rbind", strsplit(c(
+                                        as.character(subjMatch$Group),
+                                        as.character(subjMatch$Members)
+                                ), ","))
+                        optData <- selData[splitSubj,]
                         a <- rownames(optData)
-                        optimData <- selData[a,]
+                        optimData <- selData[a, ]
                         
                         #==== Tabling pvalues and SMD after matching ====
-                        S <- summaryGmatch(optData)
-                        
+                        S = list()
+                        for (i in 1:length(selVars)) {
+                                S[[i]] = summaryGmatch(optimData, response, names(selVars)[i])
+                        }
+                   
                 }
-               p3 = ggplot(data=optimData, aes(logitPropensity, color=group,fill=group)) + 
-                        geom_histogram(aes(y= ..density..),fill="white", alpha = 1, position = "identity")+
-                        labs(title="Logit Propensity of Subjects after Iterative Optimal Matching") +
-                        geom_density(alpha=0.9)+
-                        theme(plot.title = element_text(hjust = 0.5))+
-                        xlab("Logit propensity") +
-                        ylab("Density") +
-                        scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
-                        scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
-                        scale_x_continuous(limits = c(-3, 3))
-                        
-                       return(list(p1,p2,p3))
+               # p3 = ggplot(data=optimData, aes(logitPropensity, color=group,fill=group)) + 
+               #          geom_histogram(aes(y= ..density..),fill="white", alpha = 1, position = "identity")+
+               #          labs(title="Logit Propensity of Subjects after Iterative Optimal Matching") +
+               #          geom_density(alpha=0.9)+
+               #          theme(plot.title = element_text(hjust = 0.5))+
+               #          xlab("Logit propensity") +
+               #          ylab("Density") +
+               #          scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+               #          scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+               #          scale_x_continuous(limits = c(-3, 3))
+               #          
+               #         return(list(p1,p2,p3))
                         
                         
                         
         }                    
  
-          
+        #=== Histogram of propensity score =====
+        # pro <-
+        #         rowMeans (sapply(rfRF100, function(x) {
+        #                 predict(x$tree, newdata = selData , type = "prob")[, 2]
+        #         }))
+        # 
+        #   logitPro <- log(pro / (1 - pro))
+        # 
+        #   # Histogram of logit propensity for all subjects before matching
+        #   selData["logitPropensity"]<- NA
+        #   selData$logitPropensity <-logitPro
+        #   library(ggplot2)
+        #   p1 = ggplot(data=selData, aes(logitPropensity, color= group, fill=group)) + 
+        #           geom_histogram(aes(y=..density..),fill="white", alpha = 1, position = "identity")+
+        #           labs(title="Logit Propensity of all Subjects") +
+        #           geom_density(alpha=0.9)+ 
+        #           theme(plot.title = element_text(hjust = 0.5))+
+        #           xlab("Logit propensity") +
+        #           ylab("Density") +
+        #           scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+        #           scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+        #           scale_x_continuous(limits = c(-3, 3))
+        #           
+        #          
+        # ggplot(data=selData, aes(pro, color=group,fill=group)) + 
+        #           geom_histogram(aes(y=..density..),fill="white", alpha = 1, position = "identity")+
+        #           labs(title="Histogram for Propensity of all subjects")+
+        #           geom_density(alpha=0.9)+scale_color_brewer(palette="Dark2")+
+        #                    theme(plot.title = element_text(hjust = 0.5))+
+        #                    xlab("Propensity") +
+        #                    ylab("Density") +
+        #                    scale_fill_discrete(name= "Group",labels=c( "TD", "ASD"))+
+        #                    scale_color_discrete(name = "Group", labels = c("TD","ASD"))+
+        #                    scale_x_continuous(limits = c(-0.1 ,1))
+        #   
         proc.time() - ptm
-        
+      
+        sink()
           }

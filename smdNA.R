@@ -3,10 +3,10 @@ smd = function(DATA,Var,GROUP){
   #pars <- as.list(match.call())
   if(is.factor(DATA[,Var])){
     #if (is.factor(DATA[ASD,as.character(Var)])){
-    mASD = mean(as.numeric(DATA[DATA[,GROUP]==1,Var],na.rm = TRUE))
-    mTD = mean(as.numeric(DATA[DATA[,GROUP]!=1,Var],na.rm = TRUE))
-    varASD = var(as.numeric(DATA[DATA[,GROUP]==1,Var],na.rm = TRUE))
-    varTD = var(as.numeric(DATA[DATA[,GROUP]!=1,Var],na.rm = TRUE))
+    mASD = mean(as.numeric(DATA[DATA[,GROUP]==1,Var]),na.rm = TRUE)
+    mTD = mean(as.numeric(DATA[DATA[,GROUP]!=1,Var]),na.rm = TRUE)
+    varASD = var(as.numeric(DATA[DATA[,GROUP]==1,Var]),na.rm = TRUE)
+    varTD = var(as.numeric(DATA[DATA[,GROUP]!=1,Var]),na.rm = TRUE)
     stdMeanDiff = (mASD - mTD)/(sqrt((varASD + varTD)/2))
     #cat("SMD",pars$Data,pars$Var,"=", stdMeanDiff,"\n")
     return(stdMeanDiff)

@@ -12,7 +12,7 @@ growtree<-function(id=1L, depth=1L, data, response, subset, search, method, spli
     #right here i need to insert the variable selection for both cat and cont
     #before it goes into partition or find split
     
-    varSelected<-sort(sample(1:(ncol(data)-1),mtry,replace = F, prob = c(.2,.2,.2,.2,.2)))
+    varSelected<-sort(sample(1:(ncol(data)-1),mtry,replace = F, prob = rep(1/(ncol(data)),ncol(data)-1)))
     vars<-data[,!names(data) %in% response,drop=F][,varSelected,drop=FALSE]
     colnames(vars)=varSelected #Have columns represent varid
     
